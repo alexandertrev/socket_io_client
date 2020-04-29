@@ -1,4 +1,5 @@
-import { Component, OnInit } from '@angular/core';
+import { Component } from '@angular/core';
+import { BehaviorSubject } from 'rxjs';
 
 import { ServiceToolService } from '../../services/service-tool/service-tool.service';
 
@@ -7,24 +8,21 @@ import { ServiceToolService } from '../../services/service-tool/service-tool.ser
   templateUrl: './home.component.html',
   styleUrls: ['./home.component.scss']
 })
-export class HomeComponent implements OnInit {
-  connectionInProgress: boolean;
-  connected: boolean;
+export class HomeComponent {
+  connectionStatus$: BehaviorSubject<boolean>;
   errorMessage: string;
+  ipAddress: string;
 
-  constructor(private serviceTool: ServiceToolService) { }
-
-  ngOnInit(): void {
-    const cpInfo = { cp_id: '1', site: 'site1' };
-    this.connectionInProgress = true;
-    this.serviceTool.connect(cpInfo)
-      .then(() => this.setConnectionStatus(true))
-      .catch(err => this.setConnectionStatus(false, err));
+  constructor(private serviceTool: ServiceToolService) { 
+    this.connectionStatus$ = serviceTool.connectionStatusSubject;
   }
 
-  setConnectionStatus = (status: boolean, error: any = undefined) => {
-    this.connected = status;
+  connect = () => {
+    this.serviceTool.connect(this.ipAddress)
+      .catch(err => this.setConnectionError(err));
+  }
+
+  setConnectionError = (error: any) => {
     this.errorMessage = error;
-    this.connectionInProgress = false;
   }
 }

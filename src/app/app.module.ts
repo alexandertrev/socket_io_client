@@ -1,5 +1,6 @@
 import { BrowserModule } from '@angular/platform-browser';
 import { NgModule } from '@angular/core';
+import {FormsModule} from '@angular/forms'
 import { SocketIoModule } from 'ngx-socket-io';
 
 import { AppRoutingModule } from './app-routing.module';
@@ -21,6 +22,7 @@ import { ServiceToolService } from './services/service-tool/service-tool.service
   imports: [
     BrowserModule,
     AppRoutingModule,
+    FormsModule,
     SocketIoModule
   ],
   providers: [ServiceToolService, BusinessLogicInterface],

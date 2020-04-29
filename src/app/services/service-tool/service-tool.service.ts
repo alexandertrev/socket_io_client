@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { BehaviorSubject } from 'rxjs';
 import * as _ from 'lodash';
 import * as JSZip from 'jszip';
 
@@ -6,8 +7,8 @@ import { SocketService } from '../socket/socket.service';
 import { BusinessLogicInterface } from '../../business_logic';
 
 enum ConnectionType {
-  test = 'TEST',
-  cp = 'CP'
+  Test = 'TEST',
+  Cp = 'CP'
 }
 
 enum Events {
@@ -37,33 +38,22 @@ interface CpInfo {
   site: string;
 }
 
-interface ConnectionTry {
-  ip: string;
-  success: boolean;
-}
-
-@Injectable({
-  providedIn: 'root'
-})
+@Injectable()
 export class ServiceToolService {
   socketService: SocketService;
   port = 8988;
   serverIp: string;
-  cpInfo: CpInfo;
-  connected = false;
+  connectionStatusSubject: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
 
   constructor(
     private _bl: BusinessLogicInterface,
   ) { }
 
-  connect = async (cpInfo: CpInfo): Promise<void> => {
+  connect = async (serverIpAddress: string): Promise<void> => {
     try {
-      this.setCpInfo(cpInfo);
-      const networkIp = await this.getNetworkIp();
-      const serverIp = await this.scanNetwork(networkIp);
-      this.socketService = new SocketService(serverIp, { query: { identity: ConnectionType.cp } });
+      const socketServerAddress = `http://${serverIpAddress}:${this.port}`;
+      this.socketService = new SocketService(socketServerAddress, { query: { identity: ConnectionType.Cp } });
       this.setConnectionStatus(true);
-      console.log('connection established');
       this.signToEvents();
     } catch (err) {
       return Promise.reject(err);
@@ -88,13 +78,21 @@ export class ServiceToolService {
     this.socketService.on(Events.reconnect, () => this.setConnectionStatus(true));
 
     this.registerToEventWithAnswer(Events.eventTest, () => { console.log('eventTest'); return 'ok'; });
-    this.registerToEventWithAnswer(Events.cpInfo, () => { console.log('cpInfo'); return this.cpInfo; });
+    this.registerToEventWithAnswer(Events.cpInfo, this.handleGetCpInfo);
     this.registerToEventWithAnswer(Events.backupDb, this.backupHandler);
     this.registerToEventWithAnswer(Events.uploadDb, this.uploadHandler);
   }
 
+  handleGetCpInfo = (): Promise<{ success: boolean, data?: CpInfo, error?: string }> => {
+    console.error('handleGetCpInfo');
+    const cpInfo = ['1', 'site1'];
+    return Promise.resolve(cpInfo)
+      .then(([cp_id, site]: Array<string>) => ({ success: true, data: { cp_id, site } }))
+      .catch((error: Error) => ({ success: false, error: error.message }));
+  }
+
   backupHandler = (dbType: DbType): Promise<{ success: boolean, data?: Uint8Array, error?: string }> => {
-    console.log('backupHandler ? dbType', dbType);
+    console.error('backupHandler ? dbType', dbType);
     const promiseMap = {
       [DbType.data]: this._bl.dbService.exportDBToSQLFile,
       [DbType.logs]: this._bl.logger.exportLogsDBToSQLFile
@@ -108,7 +106,7 @@ export class ServiceToolService {
   }
 
   uploadHandler = (data: any): Promise<{ success: boolean, error?: string }> => {
-    console.log('uploadHandler ? data', data);
+    console.error('uploadHandler ? data', data);
     const parsedData = !_.isEmpty(data) && _.toArray(data);
     return JSZip.loadAsync(parsedData)
       .then(zip => zip.file('zip').async('text'))
@@ -126,9 +124,7 @@ export class ServiceToolService {
   registerToEventWithAnswer = (event: Events, handler: (data?: any) => any) => {
     this.socketService.on(event, async (res: EventResponse) => {
       try {
-        console.log('data ? ', res);
         const answerData = await handler(res.data);
-        console.log('answerData ? ', answerData);
         this.answerEvent(event, answerData);
       } catch (error) {
         this.answerEvent(event, { error });
@@ -140,47 +136,7 @@ export class ServiceToolService {
     this.socketService.sendEvent(`${event}:answer`, data);
   }
 
-  private scanNetwork = async (networkIp: string): Promise<string> => {
-    const networkIdentifier = _.chain(networkIp).split('.').dropRight(1).join('.').value();
-    const socketsPromiseArr = _.map(_.range(1, 255), (host) => {
-      const serverIp = `${networkIdentifier}.${host}:${this.port}`;
-      return this.tryConnection(serverIp);
-    });
-    const socketConnections: Array<ConnectionTry> = await Promise.all(socketsPromiseArr);
-    const network = _.find(socketConnections, { success: true });
-    return network
-      ? Promise.resolve(network.ip)
-      : Promise.reject('Service tool server was not found');
-  }
-
-  private tryConnection = (ip: string): Promise<ConnectionTry> => new Promise(resolve => {
-    const extraOptions = { reconnection: false, transports: ['websocket'], query: { identity: ConnectionType.test } };
-    const socket: SocketService = new SocketService(ip, extraOptions);
-    socket.once('connect_error', () => {
-      socket.disconnect();
-      resolve({ ip, success: false });
-    });
-    socket.once('connect', () => {
-      socket.disconnect();
-      resolve({ ip, success: true });
-    });
-    socket.connect();
-  })
-
-  private getNetworkIp = (): Promise<string> => new Promise((resolve, reject) => {
-    // insert cordova network interface instead of hard coded response
-    resolve('127.0.0.1');
-  })
-
-  setServerIp = (ip: string): void => {
-    this.serverIp = ip;
-  }
-
-  setCpInfo = (cpInfo: CpInfo): void => {
-    this.cpInfo = { ...cpInfo };
-  }
-
   setConnectionStatus = (status: boolean): void => {
-    this.connected = status;
+    this.connectionStatusSubject.next(status);
   }
 }

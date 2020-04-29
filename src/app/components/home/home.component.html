@@ -1,4 +1,5 @@
-<p>home works!</p>
-<p>Connection In Progress: {{connectionInProgress}}</p>
-<p>Connection status: {{connected}}</p>
+<input [(ngModel)]="ipAddress">
+<button (click)="connect()">Connect</button>
+
+<p>Connection status: {{connectionStatus$ | async}}</p>
 <p style='color: red;'>{{errorMessage}}</p>
